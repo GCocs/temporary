@@ -244,7 +244,20 @@ def getDestinationLoc(destination):
 #           response.json().get("response").get("result").get("point").get("x"))
 
 
+def findBus(userLati, userLong, userDestination):
+    userStart = coordinateBusStopSearch(userLati, userLong)
+
+    destinationPointLati, destinationPointLong = getDestinationLoc(userDestination)
+    userEnd = coordinateBusStopSearch(destinationPointLati, destinationPointLong)
+
+    # TODO 여기서 부터 경로 탐색 : 해당 두 역을 지나는 버스 번호 및 노선 탐색
+    # TODO 탐색한 모든 역에 대해 버스 최단거리 알고리즘 등 적용하면 될듯
+    return None
+
+
 if __name__ == "__main__":
+    # test code
+
     # 사용자위치는 임의설정(반경 500m내 버스정류장 없는 곳으로 하였음) 프론트에서 나중에 받을 예정
     userPointLong = 126.93540006310809
     userPointLati = 37.41909998804243
