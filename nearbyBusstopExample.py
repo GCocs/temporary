@@ -310,8 +310,6 @@ if __name__ == "__main__":
     userPointLati = 37.555547
     busstopData = coordinateBusStopSearch(userPointLati, userPointLong)
 
-    print(busstopData)
-    print("All path :", getAllPath(*busstopData))
     #
     # # 응답 출력
     # print("출발지 버스정류소 :", busstopData)
