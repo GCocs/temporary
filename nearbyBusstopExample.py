@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from fastapi import FastAPI
 import requests
 import urllib.parse
@@ -42,7 +43,6 @@ def coordinateRequest(pointLati, pointLong):
     response = requests.get(COORDINATE_URL, params=modifiedParam)
 
     busStopBodyJson = response.json().get("response").get("body")
-    print("버스정류소 검색 body데이터 :", busStopBodyJson)
 
     return busStopBodyJson
 
@@ -57,16 +57,27 @@ def coordinateCheckResult(requestResult, successCount):
     """
     newResultBusStop = None
 
+    if requestResult['totalCount'] > 1:
+        print("버스정류소 검색 body데이터 :", requestResult['items']['item'][0])
+    else:
+        print("버스정류소 검색 body데이터 :", requestResult)
+
     if requestResult.get("totalCount") == 1:
         successCount += 1
         # 버스정류장 정보
-        resultBusStop = requestResult.get("items").get("item").get("nodenm")
+        # newResultBusStop = requestResult.get("items").get("item").get("nodenm")
+        newResultBusStop = [requestResult.get("items").get("item").get("nodenm"),
+                            requestResult.get("items").get("item").get("nodeid"),
+                            requestResult.get("items").get("item").get("citycode")]
     elif requestResult.get("totalCount") != 0:
         # 검색결과가 여러개이면
         successCount += 1
 
         # 가장 가까운 0번 선택
-        newResultBusStop = requestResult.get("items").get("item")[0].get("nodenm")
+        # newResultBusStop = requestResult.get("items").get("item")[0].get("nodenm")
+        newResultBusStop = [requestResult.get("items").get("item")[0].get("nodenm"),
+                            requestResult.get("items").get("item")[0].get("nodeid"),
+                            requestResult.get("items").get("item")[0].get("citycode")]
 
     return [newResultBusStop, successCount]
 
@@ -77,7 +88,7 @@ def coordinateBusStopSearch(pointLati, pointLong):
 
     :param pointLati: 위도 데이터 - float
     :param pointLong: 경도 데이터 - float
-    :return: 버스 정류장 데이터 -
+    :return: 버스 정류장 데이터 - list : [bus stop name, bus stop id]
     """
 
     busstopBodyJson = coordinateRequest(pointLati, pointLong)
@@ -112,10 +123,9 @@ def coordinateBusStopSearch(pointLati, pointLong):
                 nowLat, nowLong = firstCoordinateLati - latGab, firstCoordinateLong - longGab
 
                 busstopBodyJson = coordinateRequest(nowLat, nowLong)
-                print("버스정류소 재검색 body데이터 1:", busstopBodyJson)
 
                 resultBusStop, successCount = coordinateCheckResult(busstopBodyJson, successCount)
-                if resultBusStop is not None and resultBusStop.find("경유") == -1:
+                if resultBusStop is not None and getAllPath(*resultBusStop):
                     break
 
             numberOfImplementation += 1
@@ -185,7 +195,8 @@ def coordinateBusStopSearch(pointLati, pointLong):
             #     nowCoordinateLong -= 0.0045
             numberOfImplementation += 1
     else:
-        resultBusStop = busstopBodyJson.get("items").get("item")[0].get("nodenm")
+        resultBusStop = coordinateCheckResult(busstopBodyJson, 0)[0]
+
 
     return resultBusStop  # 지금은 마지막에 검색된 곳을 리턴해줌
     # TODO pointLati와 버스정류장 거리를 피타고라스로 계산 후 가장 가까운 곳 추천
@@ -205,7 +216,7 @@ def getDestinationLoc(destination):
         "request": "search",
         "crs": "EPSG:4326",
         # 목적지 설정 - destination으로 대체 되는 것 같음.
-        "query": "경기대 수원캠퍼스",
+        "query": destination,
         "type": "place",
         "format": "json",
         # 인증키 부분 지우고 V-world(디지털트윈국토)에서 발급받은 api 인증키 입력
@@ -222,6 +233,41 @@ def getDestinationLoc(destination):
         res[1] = float(adressData.get("response").get("result").get("items")[0].get("point").get("x"))
         res[0] = float(adressData.get("response").get("result").get("items")[0].get("point").get("y"))
     return res
+
+
+def getAllPath(busStopName, busStopId, cityCode):
+    """
+    출발 버스 정류장을 지나는 모든 버스 노선 id를 반환 - 불필요할 할지도
+
+    :param busStopName: 출발 버스 정류장 이름
+    :param busStopId: 출발 버스 정류장 id
+    :param cityCode: 출발 버스 정류장 아이디
+    :return: list [노선 ID...]
+    """
+    busPathURL = 'http://apis.data.go.kr/1613000/BusSttnInfoInqireService/getSttnThrghRouteList'
+
+    params = {
+        "serviceKey": getEnv("DATA_GO_KEY"),
+        "_type": "json",
+        "numOfRows": "10",
+        "pageNo": "1",
+        "cityCode": cityCode,
+        "nodeid": busStopId
+    }
+
+    response = requests.get(busPathURL, params=params)
+
+    pathJson = response.json().get("response").get("body")
+
+    if pathJson['totalCount'] == 1:
+        return [pathJson['items']['item']['routeid']]
+    elif pathJson['totalCount'] > 1:
+        routeIds = []
+        for item in pathJson['items']['item']:
+            routeIds.append(item['routeid'])
+        return routeIds
+
+    return []
 
 
 # apiurl = "https://api.vworld.kr/req/address?"
@@ -245,6 +291,7 @@ def getDestinationLoc(destination):
 
 
 def findBus(userLati, userLong, userDestination):
+    # [busStopName, busStopID]
     userStart = coordinateBusStopSearch(userLati, userLong)
 
     destinationPointLati, destinationPointLong = getDestinationLoc(userDestination)
@@ -256,16 +303,21 @@ def findBus(userLati, userLong, userDestination):
 
 
 if __name__ == "__main__":
-    # test code
-
+    # test cod
+    pass
     # 사용자위치는 임의설정(반경 500m내 버스정류장 없는 곳으로 하였음) 프론트에서 나중에 받을 예정
-    userPointLong = 126.93540006310809
-    userPointLati = 37.41909998804243
+    userPointLong = 126.972651
+    userPointLati = 37.555547
     busstopData = coordinateBusStopSearch(userPointLati, userPointLong)
 
-    # 응답 출력
-    print("출발지 버스정류소 :", busstopData)
-    destinationPointLati, destinationPointLong = getDestinationLoc("")
-    busstopData = coordinateBusStopSearch(destinationPointLati, destinationPointLong)
-    # 응답 출력
-    print("목적지 버스정류소 :", busstopData)
+    print(busstopData)
+    print("All path :", getAllPath(*busstopData))
+    #
+    # # 응답 출력
+    # print("출발지 버스정류소 :", busstopData)
+    # destinationPointLati, destinationPointLong = getDestinationLoc("경기대 수원캠")
+    # busstopData = coordinateBusStopSearch(destinationPointLati, destinationPointLong)
+    #
+    # print(busstopData)
+    # # 응답 출력
+    # print("목적지 버스정류소 :", busstopData)
