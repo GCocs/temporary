@@ -4,7 +4,42 @@ import urllib.parse
 from envReader import getEnv
 
 
-def coordinateBusStopSearch(pointLati, pointLong):  # 좌표를 이용한 버스정류소 검색 함수
+COORDINATE_URL = "http://apis.data.go.kr/1613000/BusSttnInfoInqireService/getCrdntPrxmtSttnList"
+COORDINATE_PARAMS = {
+        # 인증키 부분을 지우고 공공데이터 포털 api 인증키(decode) 입력
+        "serviceKey": getEnv("DATA_GO_KEY"),
+        "gpsLati": None,
+        "gpsLong": None,
+        "numOfRows": "10",
+        "pageNo": "1",
+        "_type": "json"
+    }
+
+def coordinateRequest(pointLati, pointLong):
+    global COORDINATE_URL
+    global COORDINATE_PARAMS
+
+    # 기존의 params 딕셔너리를 쿼리 문자열로 변환
+    queryParams = urllib.parse.urlencode(COORDINATE_PARAMS)
+    # 변환된 쿼리 문자열을 딕셔너리로 다시 파싱
+    parsedParams = dict(urllib.parse.parse_qsl(queryParams))
+
+    # gpsLati 값을 받아온 위치 값으로 수정
+    parsedParams["gpsLati"] = pointLati
+    parsedParams["gpsLong"] = pointLong
+
+    # 새로운 쿼리 문자열을 생성
+    modifiedParam = urllib.parse.urlencode(parsedParams)
+
+    # api 요청
+    response = requests.get(COORDINATE_URL, params=modifiedParam)
+
+    busStopBodyJson = response.json().get("response").get("body")
+    print("버스정류소 검색 body데이터 :", busStopBodyJson)
+
+    return busStopBodyJson
+
+def coordinateBusStopSearch(pointLati, pointLong):
     """
     좌표를 이용하여 근처의 버스정류소를 검색
 
@@ -13,61 +48,91 @@ def coordinateBusStopSearch(pointLati, pointLong):  # 좌표를 이용한 버스
     :return: 버스 정류장 데이터 -
     """
 
-    queryParams = urllib.parse.urlencode(params)  # 기존의 params 딕셔너리를 쿼리 문자열로 변환
-    print("queryParams :", queryParams)
-    parsedParams = dict(urllib.parse.parse_qsl(queryParams))  # 변환된 쿼리 문자열을 딕셔너리로 다시 파싱
-    print("parsedParams :", parsedParams)
-    parsedParams["gpsLati"] = pointLati  # gpsLati 값을 받아온 lati값으로 수정
-    parsedParams["gpsLong"] = pointLong  # gpsLong 값을 받아온 long값으로 수정
-    modifiedParam = urllib.parse.urlencode(parsedParams)  # 새로운 쿼리 문자열을 생성
+    # 기존의 params 딕셔너리를 쿼리 문자열로 변환
+    queryParams = urllib.parse.urlencode(params)
+    # 변환된 쿼리 문자열을 딕셔너리로 다시 파싱
+    parsedParams = dict(urllib.parse.parse_qsl(queryParams))
 
-    response = requests.get(url, params=modifiedParam)  # api 요청
-    busstopBodyJson = response.json().get("response").get("body")  # body에서 모든 데이터를 사용하므로 body값 데이터만 반환
+    # gpsLati 값을 받아온 위치 값으로 수정
+    parsedParams["gpsLati"] = pointLati
+    parsedParams["gpsLong"] = pointLong
+
+    # 새로운 쿼리 문자열을 생성
+    modifiedParam = urllib.parse.urlencode(parsedParams)
+
+    # api 요청
+    response = requests.get(url, params=modifiedParam)
+    # body에서 모든 데이터를 사용하므로 body값 데이터만 반환
+    busstopBodyJson = response.json().get("response").get("body")
     print("버스정류소 검색 body데이터 :", busstopBodyJson)
-    if busstopBodyJson.get("totalCount") == 0:  # 검색결과가 없으면 범위를 500m씩 넓혀서 검색하는 알고리즘 실행 같이 보낸 링크참고
+
+    resultBusStop = None
+    # 검색결과가 없으면 범위를 500m씩 넓혀서 검색하는 알고리즘 실행 같이 보낸 링크참고
+    if busstopBodyJson.get("totalCount") == 0:
         successCount = 0
-        numberOfImplementation = 1  # 반복 횟수
-        while successCount == 0:  # 검색결과가 하나이상 나올경우 한바퀴 돌고나서 중단함 없으면 범위를 넓혀 반복
-            firstCoordinateLati = pointLati - numberOfImplementation * (0.0045)  # 500m당 위/경도 서울기준 약 0.0045도
+        # 반복 횟수
+        numberOfImplementation = 1
+
+        # 검색결과가 하나이상 나올경우 한바퀴 돌고나서 중단함 없으면 범위를 넓혀 반복
+        while successCount == 0:
+            # 500m당 위/경도 서울기준 약 0.0045도
+            firstCoordinateLati = pointLati - numberOfImplementation * (0.0045)
             firstCoordinateLong = pointLong - numberOfImplementation * (0.0045)
-            queryParams = urllib.parse.urlencode(params)  # 쿼리
+
+            # 쿼리
+            queryParams = urllib.parse.urlencode(params)
             parsedParams = dict(urllib.parse.parse_qsl(queryParams))
-            parsedParams["gpsLati"] = firstCoordinateLati  # 원래 좌표기준 위/경도 -500m 한 좌표로 초기값을 잡음
+
+            # 원래 좌표기준 위/경도 -500m 한 좌표로 초기값을 잡음
+            parsedParams["gpsLati"] = firstCoordinateLati
             parsedParams["gpsLong"] = firstCoordinateLong
             modifiedParam = urllib.parse.urlencode(parsedParams)
 
             response = requests.get(url, params=modifiedParam)
             busstopBodyJson = response.json().get("response").get("body")
-            print("버스정류소 재검색 body데이터 0:",
-                  busstopBodyJson)  # 재검색 데이터 뒤에 숫자가 0이면 초기값 1이면 Lati에 +500m 2면 Long에 +500m -는 음수
-            if busstopBodyJson.get("totalCount") == 1:  # 검색결과가 하나이면 배열값이 아니므로 따로 분리하였음
+            print("버스정류소 재검색 body데이터 0:", busstopBodyJson)
+
+            # 재검색 데이터 뒤에 숫자가 0이면 초기값 1이면 Lati에 +500m 2면 Long에 +500m -는 음수
+            # 검색결과가 하나이면 배열값이 아니므로 따로 분리하였음
+            if busstopBodyJson.get("totalCount") == 1:
                 successCount += 1
-                busstopData = busstopBodyJson.get("items").get("item").get("nodenm")  # 버스정류장 정보
-            elif busstopBodyJson.get("totalCount") != 0:  # 검색결과가 여러개이면
+                # 버스정류장 정보
+                resultBusStop = busstopBodyJson.get("items").get("item").get("nodenm")
+
+            # 검색결과가 여러개이면
+            elif busstopBodyJson.get("totalCount") != 0:
                 successCount += 1
-                busstopData = busstopBodyJson.get("items").get("item")[0].get("nodenm")  # 가장 가까운 0번 선택
+
+                # 가장 가까운 0번 선택
+                busstopData = busstopBodyJson.get("items").get("item")[0].get("nodenm")
+
             nowCoordinateLati = firstCoordinateLati + 0.0045
             nowCoordinateLong = firstCoordinateLong
 
-            queryParams = urllib.parse.urlencode(params)  # 쿼리
+            # 쿼리
+            queryParams = urllib.parse.urlencode(params)
             parsedParams = dict(urllib.parse.parse_qsl(queryParams))
-            parsedParams["gpsLati"] = nowCoordinateLati  # gpsLati 값을 수정
-            parsedParams["gpsLong"] = nowCoordinateLong  # param값은 초기화되므로 값변동없어도 입력
+            # gpsLati 값을 수정
+            parsedParams["gpsLati"] = nowCoordinateLati
+            parsedParams["gpsLong"] = nowCoordinateLong
             modifiedParam = urllib.parse.urlencode(parsedParams)
 
             response = requests.get(url, params=modifiedParam)
             busstopBodyJson = response.json().get("response").get("body")
             print("버스정류소 재검색 body데이터 1:", busstopBodyJson)
+
             if busstopBodyJson.get("totalCount") == 1:
                 successCount += 1
-                busstopData = busstopBodyJson.get("items").get("item").get("nodenm")
+                resultBusStop = busstopBodyJson.get("items").get("item").get("nodenm")
             elif busstopBodyJson.get("totalCount") != 0:
                 successCount += 1
-                busstopData = busstopBodyJson.get("items").get("item")[0].get("nodenm")
-            while firstCoordinateLati != nowCoordinateLati or firstCoordinateLong != nowCoordinateLong:  # 현재좌표가 초기값이면 루프종료
+                resultBusStop = busstopBodyJson.get("items").get("item")[0].get("nodenm")
+
+            # 현재좌표가 초기값이면 루프종료
+            while firstCoordinateLati != nowCoordinateLati or firstCoordinateLong != nowCoordinateLong:
                 for i in range(numberOfImplementation * 2 - 1):
                     nowCoordinateLati += 0.0045
-                    #
+
                     queryParams = urllib.parse.urlencode(params)
                     parsedParams = dict(urllib.parse.parse_qsl(queryParams))
                     parsedParams["gpsLati"] = nowCoordinateLati
@@ -77,12 +142,14 @@ def coordinateBusStopSearch(pointLati, pointLong):  # 좌표를 이용한 버스
                     response = requests.get(url, params=modifiedParam)
                     busstopBodyJson = response.json().get("response").get("body")
                     print("버스정류소 재검색 body데이터 1:", busstopBodyJson)
+
                     if busstopBodyJson.get("totalCount") == 1:
                         successCount += 1
-                        busstopData = busstopBodyJson.get("items").get("item").get("nodenm")
+                        resultBusStop = busstopBodyJson.get("items").get("item").get("nodenm")
                     elif busstopBodyJson.get("totalCount") != 0:
                         successCount += 1
-                        busstopData = busstopBodyJson.get("items").get("item")[0].get("nodenm")
+                        resultBusStop = busstopBodyJson.get("items").get("item")[0].get("nodenm")
+
                 for i in range(numberOfImplementation * 2):
                     nowCoordinateLong += 0.0045
 
@@ -95,12 +162,14 @@ def coordinateBusStopSearch(pointLati, pointLong):  # 좌표를 이용한 버스
                     response = requests.get(url, params=modifiedParam)
                     busstopBodyJson = response.json().get("response").get("body")
                     print("버스정류소 재검색 body데이터 2:", busstopBodyJson)
+
                     if busstopBodyJson.get("totalCount") == 1:
                         successCount += 1
-                        busstopData = busstopBodyJson.get("items").get("item").get("nodenm")
+                        resultBusStop = busstopBodyJson.get("items").get("item").get("nodenm")
                     elif busstopBodyJson.get("totalCount") != 0:
                         successCount += 1
-                        busstopData = busstopBodyJson.get("items").get("item")[0].get("nodenm")
+                        resultBusStop = busstopBodyJson.get("items").get("item")[0].get("nodenm")
+
                 for i in range(numberOfImplementation * 2):
                     nowCoordinateLati -= 0.0045
 
@@ -113,12 +182,14 @@ def coordinateBusStopSearch(pointLati, pointLong):  # 좌표를 이용한 버스
                     response = requests.get(url, params=modifiedParam)
                     busstopBodyJson = response.json().get("response").get("body")
                     print("버스정류소 재검색 body데이터 -1:", busstopBodyJson)
+
                     if busstopBodyJson.get("totalCount") == 1:
                         successCount += 1
-                        busstopData = busstopBodyJson.get("items").get("item").get("nodenm")
+                        resultBusStop = busstopBodyJson.get("items").get("item").get("nodenm")
                     elif busstopBodyJson.get("totalCount") != 0:
                         successCount += 1
-                        busstopData = busstopBodyJson.get("items").get("item")[0].get("nodenm")
+                        resultBusStop = busstopBodyJson.get("items").get("item")[0].get("nodenm")
+
                 for i in range(numberOfImplementation * 2 - 1):
                     nowCoordinateLong -= 0.0045
 
@@ -131,44 +202,55 @@ def coordinateBusStopSearch(pointLati, pointLong):  # 좌표를 이용한 버스
                     response = requests.get(url, params=modifiedParam)
                     busstopBodyJson = response.json().get("response").get("body")
                     print("버스정류소 재검색 body데이터 -2:", busstopBodyJson)
+
                     if busstopBodyJson.get("totalCount") == 1:
                         successCount += 1
-                        busstopData = busstopBodyJson.get("items").get("item").get("nodenm")
+                        resultBusStop = busstopBodyJson.get("items").get("item").get("nodenm")
                     elif busstopBodyJson.get("totalCount") != 0:
                         successCount += 1
-                        busstopData = busstopBodyJson.get("items").get("item")[0].get("nodenm")
-                nowCoordinateLong -= 0.0045  # 초기값으로 돌아가기
+                        resultBusStop = busstopBodyJson.get("items").get("item")[0].get("nodenm")
+
+                # 초기값으로 돌아가기
+                nowCoordinateLong -= 0.0045
             numberOfImplementation += 1
     else:
-        busstopData = busstopBodyJson.get("items").get("item")[0].get("nodenm")
-    return busstopData  # 지금은 마지막에 검색된 곳을 리턴해줌
+        resultBusStop = busstopBodyJson.get("items").get("item")[0].get("nodenm")
+
+    return resultBusStop  # 지금은 마지막에 검색된 곳을 리턴해줌
     # TODO pointLati와 버스정류장 거리를 피타고라스로 계산 후 가장 가까운 곳 추천
 
 
-apiurl = "https://api.vworld.kr/req/search?"
-params = {
-    # 장소검색 기준
-    "service": "search",
-    "request": "search",
-    "crs": "EPSG:4326",
-    # 목적지 설정
-    "query": "경기대 수원캠",
-    "type": "place",
+def getDestinationLoc(destination):
+    """
+    목적지명 기준으로 목저지의 위도, 경도을 알아냄.
 
-    "format": "json",
-    # 인증키 부분 지우고 V-world(디지털트윈국토)에서 발급받은 api 인증키 입력
-    "key": "인증키",
-}
-response = requests.get(apiurl, params=params)
-adressData = None
-if response.status_code == 200:
-    adressData = response.json()
-    print("장소검색 데이터 :", response.json())
+    :param destination: 목적지명 - string
+    :return: 목적지 위도, 경도 - list(위도, 경도)
+    """
+    apiurl = "https://api.vworld.kr/req/search?"
+    params = {
+        # 장소검색 기준
+        "service": "search",
+        "request": "search",
+        "crs": "EPSG:4326",
+        # 목적지 설정
+        "query": "경기대 수원캠",
+        "type": "place",
+        "format": "json",
+        # 인증키 부분 지우고 V-world(디지털트윈국토)에서 발급받은 api 인증키 입력
+        "key": "인증키",
+    }
+    response = requests.get(apiurl, params=params)
+    res = [-1, -1]
+    if response.status_code == 200:
+        adressData = response.json()
+        print("장소검색 데이터 :", response.json())
 
-    # 결과 값의 x,y좌표 꺼내기
-    # 중간에 배열 0은 첫번째 결과값을 꺼낸 것이므로 나중에 소비자가 선택가능하면 좋을 듯
-    destinationPointLong = float(adressData.get("response").get("result").get("items")[0].get("point").get("x"))
-    destinationPointLati = float(adressData.get("response").get("result").get("items")[0].get("point").get("y"))
+        # 결과 값의 x,y좌표 꺼내기
+        # 중간에 배열 0은 첫번째 결과값을 꺼낸 것이므로 나중에 소비자가 선택가능하면 좋을 듯
+        res[0] = float(adressData.get("response").get("result").get("items")[0].get("point").get("x"))
+        res[1] = float(adressData.get("response").get("result").get("items")[0].get("point").get("y"))
+    return res
 
 # 사용자위치는 임의설정(반경 500m내 버스정류장 없는 곳으로 하였음) 프론트에서 나중에 받을 예정
 userPointLong = 126.93540006310809
