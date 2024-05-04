@@ -1,6 +1,8 @@
 from fastapi import FastAPI
 import requests
 import urllib.parse
+from envReader import getEnv
+
 
 def coordinateBusStopSearch(pointLati, pointLong) : # 좌표를 이용한 버스정류소 검색 함수
     queryParams = urllib.parse.urlencode(params) # 기존의 params 딕셔너리를 쿼리 문자열로 변환
@@ -152,23 +154,22 @@ if response.status_code == 200:
     userPointLong = 126.93540006310809 #사용자위치는 임의설정(반경 500m내 버스정류장 없는 곳으로 하였음) 프론트에서 나중에 받을 예정
     userPointLati = 37.41909998804243
 
-"""
-    apiurl = "https://api.vworld.kr/req/address?"
-    params = { #도로명, 지번주소 검색은 사용하지 않을 것 같지만 혹시모르니 일단 남겨둠
-        "service": "address",
-        "request": "getcoord",
-        "crs": "epsg:4326",
-        "address": "광교산로 154-42",
-        "format": "json",
-        "type": "road",
-        "key": "인증키"
-    }
-    response = requests.get(apiurl, params=params)
-    if response.status_code == 200:
-        print("도로명주소 body검색 데이터 :",response.json())
+    # apiurl = "https://api.vworld.kr/req/address?"
+    # params = { #도로명, 지번주소 검색은 사용하지 않을 것 같지만 혹시모르니 일단 남겨둠
+    #     "service": "address",
+    #     "request": "getcoord",
+    #     "crs": "epsg:4326",
+    #     "address": "광교산로 154-42",
+    #     "format": "json",
+    #     "type": "road",
+    #     "key": "인증키"
+    # }
+    # response = requests.get(apiurl, params=params)
+    # if response.status_code == 200:
+    #     print("도로명주소 body검색 데이터 :",response.json())
+    # 
+    #     print("장소검색, 도로명검색별 좌표 :", destinationPointLati, destinationPointLong, response.json().get("response").get("result").get("point").get("y"), response.json().get("response").get("result").get("point").get("x"))
 
-        print("장소검색, 도로명검색별 좌표 :", destinationPointLati, destinationPointLong, response.json().get("response").get("result").get("point").get("y"), response.json().get("response").get("result").get("point").get("x"))
-"""
 # API URL 및 파라미터 설정
 url = "http://apis.data.go.kr/1613000/BusSttnInfoInqireService/getCrdntPrxmtSttnList"
 params = {
@@ -188,4 +189,3 @@ print("출발지 버스정류소 :", busstopData)
 busstopData = coordinateBusStopSearch(destinationPointLati, destinationPointLong)
 # 응답 출력
 print("목적지 버스정류소 :", busstopData)
-
