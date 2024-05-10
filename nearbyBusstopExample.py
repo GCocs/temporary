@@ -3,6 +3,7 @@ from fastapi import FastAPI
 import requests
 import urllib.parse
 from envReader import getEnv
+from supabase import create_client, Client
 
 COORDINATE_URL = "http://apis.data.go.kr/1613000/BusSttnInfoInqireService/getCrdntPrxmtSttnList"
 COORDINATE_PARAMS = {
@@ -58,7 +59,7 @@ def coordinateCheckResult(requestResult, successCount):
     newResultBusStop = None
 
     if requestResult['totalCount'] > 1:
-        print("버스정류소 검색 body데이터 :", requestResult['items']['item'][0])
+        print("버스정류소 검색 body데이터 :", requestResult['items']['item'])
     else:
         print("버스정류소 검색 body데이터 :", requestResult)
 
@@ -125,74 +126,9 @@ def coordinateBusStopSearch(pointLati, pointLong):
                 busstopBodyJson = coordinateRequest(nowLat, nowLong)
 
                 resultBusStop, successCount = coordinateCheckResult(busstopBodyJson, successCount)
-                if resultBusStop is not None and getAllPath(*resultBusStop):
+                if resultBusStop is not None and getAllPathId(*resultBusStop):
                     break
 
-            numberOfImplementation += 1
-
-            #
-            # busstopBodyJson = coordinateRequest(firstCoordinateLati, firstCoordinateLong)
-            #
-            # # 재검색 데이터 뒤에 숫자가 0이면 초기값 1이면 Lati에 +500m 2면 Long에 +500m -는 음수
-            # # 검색결과가 하나이면 배열값이 아니므로 따로 분리하였음
-            # resultBusStop, successCount = coordinateCheckResult(busstopBodyJson, successCount)
-            # if resultBusStop is not None and resultBusStop.find("경유") == -1:
-            #     break
-            #
-            # nowCoordinateLati = firstCoordinateLati + 0.0045
-            # nowCoordinateLong = firstCoordinateLong
-            #
-            # busstopBodyJson = coordinateRequest(nowCoordinateLati, nowCoordinateLong)
-            # print("버스정류소 재검색 body데이터 1:", busstopBodyJson)
-            #
-            # resultBusStop, successCount = coordinateCheckResult(busstopBodyJson, successCount)
-            # if resultBusStop is not None and resultBusStop.find("경유") == -1:
-            #     break
-            #
-            # # 현재좌표가 초기값이면 루프종료
-            # while firstCoordinateLati != nowCoordinateLati or firstCoordinateLong != nowCoordinateLong:
-            #     for i in range(numberOfImplementation * 2 - 1):
-            #         nowCoordinateLati += 0.0045
-            #
-            #         busstopBodyJson = coordinateRequest(nowCoordinateLati, nowCoordinateLong)
-            #         print("버스정류소 재검색 body데이터 1:", busstopBodyJson)
-            #
-            #         resultBusStop, successCount = coordinateCheckResult(busstopBodyJson, successCount)
-            #         if resultBusStop is not None and resultBusStop.find("경유") == -1:
-            #             break
-            #
-            #     for i in range(numberOfImplementation * 2):
-            #         nowCoordinateLong += 0.0045
-            #
-            #         busstopBodyJson = coordinateRequest(nowCoordinateLati, nowCoordinateLong)
-            #         print("버스정류소 재검색 body데이터 2:", busstopBodyJson)
-            #
-            #         resultBusStop, successCount = coordinateCheckResult(busstopBodyJson, successCount)
-            #         if resultBusStop is not None and resultBusStop.find("경유") == -1:
-            #             break
-            #
-            #     for i in range(numberOfImplementation * 2):
-            #         nowCoordinateLati -= 0.0045
-            #
-            #         busstopBodyJson = coordinateRequest(nowCoordinateLati, nowCoordinateLong)
-            #         print("버스정류소 재검색 body데이터 -1:", busstopBodyJson)
-            #
-            #         resultBusStop, successCount = coordinateCheckResult(busstopBodyJson, successCount)
-            #         if resultBusStop is not None and resultBusStop.find("경유") == -1:
-            #             break
-            #
-            #     for i in range(numberOfImplementation * 2 - 1):
-            #         nowCoordinateLong -= 0.0045
-            #
-            #         busstopBodyJson = coordinateRequest(nowCoordinateLati, nowCoordinateLong)
-            #         print("버스정류소 재검색 body데이터 -2:", busstopBodyJson)
-            #
-            #         resultBusStop, successCount = coordinateCheckResult(busstopBodyJson, successCount)
-            #         if resultBusStop is not None and resultBusStop.find("경유") == -1:
-            #             break
-            #
-            #     # 초기값으로 돌아가기
-            #     nowCoordinateLong -= 0.0045
             numberOfImplementation += 1
     else:
         resultBusStop = coordinateCheckResult(busstopBodyJson, 0)[0]
@@ -226,7 +162,7 @@ def getDestinationLoc(destination):
     res = [-1, -1]
     if response.status_code == 200:
         adressData = response.json()
-        print("장소검색 데이터 :", response.json())
+        # print("장소검색 데이터 :", response.json())
 
         # 결과 값의 x,y좌표 꺼내기
         # 중간에 배열 0은 첫번째 결과값을 꺼낸 것이므로 나중에 소비자가 선택가능하면 좋을 듯
@@ -235,7 +171,7 @@ def getDestinationLoc(destination):
     return res
 
 
-def getAllPath(busStopName, busStopId, cityCode):
+def getAllPathId(busStopName, busStopId, cityCode):
     """
     출발 버스 정류장을 지나는 모든 버스 노선 id를 반환 - 불필요할 할지도
 
@@ -259,6 +195,8 @@ def getAllPath(busStopName, busStopId, cityCode):
 
     pathJson = response.json().get("response").get("body")
 
+    print(pathJson)
+
     if pathJson['totalCount'] == 1:
         return [pathJson['items']['item']['routeid']]
     elif pathJson['totalCount'] > 1:
@@ -269,6 +207,15 @@ def getAllPath(busStopName, busStopId, cityCode):
 
     return []
 
+
+def getAllViaBusStop(busRouteId, cityCode):
+    url = 'http://apis.data.go.kr/1613000/BusRouteInfoInqireService/getRouteAcctoThrghSttnList'
+    params = {'serviceKey': getEnv("DATA_GO_KEY"), 'pageNo': '1', 'numOfRows': '10', '_type': 'json', 'cityCode': cityCode,
+              'routeId': busRouteId}
+
+    response = requests.get(url, params=params).json()['response']['body']['items']['item']
+
+    return response
 
 # apiurl = "https://api.vworld.kr/req/address?"
 # params = {
@@ -297,7 +244,25 @@ def findBus(userLati, userLong, userDestination):
     destinationPointLati, destinationPointLong = getDestinationLoc(userDestination)
     userEnd = coordinateBusStopSearch(destinationPointLati, destinationPointLong)
 
-    # TODO 여기서 부터 경로 탐색 : 해당 두 역을 지나는 버스 번호 및 노선 탐색
+    userStartAllPathId = getAllPathId(*userStart)
+    userEndAllPathId = getAllPathId(*userEnd)
+
+    crossPathIds = set()
+    for pathId in userStartAllPathId:
+        viaBusStops = getAllViaBusStop(pathId, userStart[-1])
+
+        for busStop in viaBusStops:
+            if busStop['nodenm'].find(userEnd[0]) != -1:
+                crossPathIds.add(pathId)
+    for pathId in userEndAllPathId:
+        viaBusStops = getAllViaBusStop(pathId, userEnd[-1])
+
+        for busStop in viaBusStops:
+            if busStop['nodenm'].find(userStart[0]) != -1:
+                crossPathIds.add(pathId)
+
+    print(crossPathIds)
+
     # TODO 탐색한 모든 역에 대해 버스 최단거리 알고리즘 등 적용하면 될듯
     return None
 
@@ -305,17 +270,148 @@ def findBus(userLati, userLong, userDestination):
 if __name__ == "__main__":
     # test cod
     pass
+
+    # === supabase test start ===
+    # url: str = getEnv("SUPABASE_URL")
+    # key: str = getEnv("SUPABASE_KEY")
+    # supabase: Client = create_client(url, key)
+
+    # supabase.table("nodes").select("NODE_NM").execute()
+    # supabase.table(("bus_stop_name")).insert(json={
+    #     "bus_stop_name": "test",
+    #     "gps_lati": 0.1010,
+    #     "gps_long": 4.123,
+    #     "bus_stop_id": "test"
+    # }).execute()
+    # === supabse test end ===
+
+    # === 출발지 목적지 모든 버스 경로 테스트 ===
+    # userLati, userLong = getDestinationLoc("의왕톨 게이트")
+    # print("user loc :", userLati, userLong)
+    userLati, userLong = 37.34849196408942, 126.98445190777875
+    # busStopData = coordinateBusStopSearch(userLati, userLong)
+    busStopData = ['의왕톨게이트', 'GGB226000038', 31170]
+    print("bus_stop_data :", busStopData)
+
+    userStartAllPathId = getAllPathId(*busStopData)
+
+    print("bus_route_ids :", userStartAllPathId)
+
+    crossPathIds = []
+    destinationName = "장안"
+    for pathId in userStartAllPathId:
+        viaBusStops = getAllViaBusStop(pathId, busStopData[-1])
+
+        for busStop in viaBusStops:
+            if busStop['nodenm'].find(destinationName) != -1:
+                crossPathIds.append(pathId)
+
+    print(crossPathIds)
+
+
     # 사용자위치는 임의설정(반경 500m내 버스정류장 없는 곳으로 하였음) 프론트에서 나중에 받을 예정
-    userPointLong = 126.972651
-    userPointLati = 37.555547
-    busstopData = coordinateBusStopSearch(userPointLati, userPointLong)
+    # userPointLong = 126.972781
+    # userPointLati = 37.555459
+    # # 37.535897, 127.005406
+    # busstopData = coordinateBusStopSearch(userPointLati, userPointLong)
+    # # # lati, long = getDestinationLoc("서울역")
+    # # # print(lati, long)
+    # # # busstopData = coordinateBusStopSearch(lati, long)
+    # print(busstopData)
+    # print("===========")
+
+    # === 모든 city code 조회 test ===
+    # url = 'http://apis.data.go.kr/1613000/BusSttnInfoInqireService/getCtyCodeList'
+    # params = {'serviceKey': getEnv("DATA_GO_KEY"), '_type': 'json'}
+    # response = requests.get(url, params=params)
+    # print(response.json())
+    # === test end ===
+
+
+    # print("============")
+    # for data in response.json()['response']['body']['items']['item']:
+    #     cityCode = data['citycode']
+    #     cityname = data['cityname']
+    #
+    #     print(f'{cityCode} start')
+    #
+    #     url = 'http://apis.data.go.kr/1613000/BusSttnInfoInqireService/getSttnNoList'
+    #     params = {'serviceKey': getEnv("DATA_GO_KEY"), 'pageNo': '1', 'numOfRows': '6637', '_type': 'json',
+    #               'cityCode': f'{cityCode}',
+    #               }
+    #     res = requests.get(url, params=params).json()
+    #
+    #     if res["response"]['body']['totalCount'] == 0:
+    #         continue
+    #
+    #     totalCount = res["response"]['body']['totalCount']
+    #     params = {'serviceKey': getEnv("DATA_GO_KEY"), 'pageNo': '1', 'numOfRows': f'{totalCount}', '_type': 'json',
+    #               'cityCode': f'{cityCode}',
+    #               }
+    #     res = requests.get(url, params=params).json()
+    #     data = []
+    #
+    #     for d in res['response']['body']['items']['item']:
+    #         d.pop('nodeno', None)
+    #         d['citycode'] = cityCode
+    #         data.append(d)
+    #     supabase.table("bus_stop_name").insert(data).execute()
+    #
+    #
+    #
+    #     print(f'{cityCode} end')
+    # url = 'http://apis.data.go.kr/1613000/BusRouteInfoInqireService/getRouteNoList'
+    # params = {'serviceKey': getEnv("DATA_GO_KEY"), 'pageNo': '1', 'numOfRows': '10', '_type': 'json', 'cityCode': '31010', 'routeNo': '8800'}
+    #
+    # response = requests.get(url, params=params)
+    # print(response.json())
+    # print("==============")
+    #
+    # url = 'http://apis.data.go.kr/1613000/BusRouteInfoInqireService/getRouteAcctoThrghSttnList'
+    # params = {'serviceKey': getEnv("DATA_GO_KEY"), 'pageNo': '1', 'numOfRows': '65', '_type': 'json', 'cityCode': '31010',
+    #           'routeId': 'GGB200000205'}
+    #
+    # response = requests.get(url, params=params)
+    # print(response.json())
+    #
+    # url = 'http://apis.data.go.kr/1613000/BusSttnInfoInqireService/getSttnNoList'
+    # params = {'serviceKey': getEnv("DATA_GO_KEY"), 'pageNo': '1', 'numOfRows': '6637', '_type': 'json', 'cityCode': '31030',
+    #           }# 'nodeNm': '서울역버스환승센터(6번승강장)(중)'}
+    # response = requests.get(url, params=params)
+    # print("===============")
+    # print(response.json())
+    # startAllpath = getAllPath(*busstopData)
+    # print(busstopData)
+    # print(startAllpath)
+    #
+    # for s in startAllpath:
+    #     # url = 'http://apis.data.go.kr/1613000/BusRouteInfoInqireService/getRouteAcctoThrghSttnList'
+    #     url = 'http://apis.data.go.kr/1613000/BusRouteInfoInqireService/getRouteInfoIem'
+    #     # params = {'serviceKey': getEnv("DATA_GO_KEY"), 'pageNo': '1', 'numOfRows': '100', '_type': 'json', 'cityCode': busstopData[2],
+    #     #      'routeId': s}
+    #     params = {'serviceKey': getEnv("DATA_GO_KEY"), '_type': 'json', 'cityCode': busstopData[2], 'routeId': s}
+    #     response = requests.get(url, params=params)
+    #     print(response.json()['response']['body']['items']['item']['routeno'])
 
     #
     # # 응답 출력
-    # print("출발지 버스정류소 :", busstopData)
-    # destinationPointLati, destinationPointLong = getDestinationLoc("경기대 수원캠")
+    # # print("출발지 버스정류소 :", busstopData)
+    # destinationPointLati, destinationPointLong = getDestinationLoc("경기대후문.수원박물관")
     # busstopData = coordinateBusStopSearch(destinationPointLati, destinationPointLong)
+    # endAllpath = getAllPath(*busstopData)
+    # print(busstopData)
+    # print(endAllpath)
     #
+    # for s in endAllpath:
+    #     # url = 'http://apis.data.go.kr/1613000/BusRouteInfoInqireService/getRouteAcctoThrghSttnList'
+    #     url = 'http://apis.data.go.kr/1613000/BusRouteInfoInqireService/getRouteInfoIem'
+    #     # params = {'serviceKey': getEnv("DATA_GO_KEY"), 'pageNo': '1', 'numOfRows': '100', '_type': 'json', 'cityCode': busstopData[2],
+    #     #      'routeId': s}
+    #     params = {'serviceKey': getEnv("DATA_GO_KEY"), '_type': 'json', 'cityCode': busstopData[2], 'routeId': s}
+    #     response = requests.get(url, params=params)
+    #     print(response.json()['response']['body']['items']['item']['routeno'])
+
     # print(busstopData)
     # # 응답 출력
     # print("목적지 버스정류소 :", busstopData)
+    
