@@ -263,6 +263,42 @@ def getAllViaBusStop(busRouteId, cityCode):
 #           response.json().get("response").get("result").get("point").get("y"),
 #           response.json().get("response").get("result").get("point").get("x"))
 
+def busArrivalTime(pathId, busStopId, cityCode):
+    url = 'http://apis.data.go.kr/1613000/ArvlInfoInqireService/getSttnAcctoSpcifyRouteBusArvlPrearngeInfoList'
+    params ={'serviceKey' : getEnv("DATA_GO_KEY"), 'pageNo' : '1', 'numOfRows' : '10', '_type' : 'json', 'cityCode' : cityCode, 'nodeId' : busStopId, 'routeId' : '' }
+    busTimeDic = {}
+    sortedBus = []
+    for routeId in pathId:
+        #찾은 노선 리스트에서 노선Id를 받아와 도착시간을 구하고 Id와 시간을 딕셔너리에 저장
+        params["routeId"] = routeId 
+        print(params["routeId"])
+        response = requests.get(url, params=params).json()
+        busTimeDic[routeId] = int(response["response"]["body"]["items"]["item"][0]["arrtime"])
+        print(busTimeDic)
+    #도착 순서대로 정렬하여 리스트에 담아 리턴
+    sortedBus = list(dict(sorted(busTimeDic.items(), key= lambda x:x[1])).keys())
+    return sortedBus
+
+def shortestBusRoute(pathId, userStartId, userEndId, cityCode):
+    url = 'http://apis.data.go.kr/1613000/BusRouteInfoInqireService/getRouteAcctoThrghSttnList'
+    params ={'serviceKey' : getEnv("DATA_GO_KEY"), 'pageNo' : '1', 'numOfRows' : '10', '_type' : 'json', 'cityCode' : cityCode, 'routeId' : '' }
+    shortPathDic = {}
+    sortedBus = []
+    for routeId in pathId:
+        startOrd, endOrd = 0, 0
+        params["routeId"] = routeId
+        response = requests.get(url, params=params).json()
+        pathList = response["response"]["items"]["item"]
+        #출발 정류장과 도착 정류장 사이 정류장 개수를 구하여 딕셔너리에 저장
+        for routeList in pathList:
+            if routeList["nodeid"].count(userStartId)==1:
+                startOrd = int(routeList["nodeord"])
+            if routeList["nodeid"].count(userEndId)==1:
+                endOrd = int(routeList["nodeord"])
+        shortPathDic[routeId] = abs(startOrd - endOrd)
+    #사이에 정류장이 적은 순으로 정렬 후 리스트에 담아 리턴
+    sortedBus = list(dict(sorted(shortPathDic.items(), key= lambda x:x[1])).keys())
+    return sortedBus
 
 def findBus(userLati, userLong, userDestination):
     # [busStopName, busStopID]
