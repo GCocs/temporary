@@ -4,6 +4,11 @@ import requests
 import urllib.parse
 from envReader import getEnv
 from supabase import create_client, Client
+import math
+
+
+distanceStandard = 1
+newResultBusStop = None
 
 COORDINATE_URL = "http://apis.data.go.kr/1613000/BusSttnInfoInqireService/getCrdntPrxmtSttnList"
 COORDINATE_PARAMS = {
@@ -48,7 +53,7 @@ def coordinateRequest(pointLati, pointLong):
     return busStopBodyJson
 
 
-def coordinateCheckResult(requestResult, successCount):
+def coordinateCheckResult(requestResult, successCount, pointLati, pointLong):
     """
     위도, 경도 기반 request에 대한 결과를 확인 함수
 
@@ -56,29 +61,48 @@ def coordinateCheckResult(requestResult, successCount):
     :param successCount: 현재 Count
     :return: list - [새로운 버스 정류장 정보, successCount + 1]
     """
-    newResultBusStop = None
-
-    if requestResult['totalCount'] > 1:
-        print("버스정류소 검색 body데이터 :", requestResult['items']['item'])
-    else:
-        print("버스정류소 검색 body데이터 :", requestResult)
+    global distanceStandard
+    global newResultBusStop
 
     if requestResult.get("totalCount") == 1:
         successCount += 1
-        # 버스정류장 정보
-        # newResultBusStop = requestResult.get("items").get("item").get("nodenm")
-        newResultBusStop = [requestResult.get("items").get("item").get("nodenm"),
-                            requestResult.get("items").get("item").get("nodeid"),
-                            requestResult.get("items").get("item").get("citycode")]
+        print("버스정류소 검색 body데이터 :", requestResult['items']['item'])
+        busLati = requestResult.get("items").get("item").get("gpslati")
+        busLong = requestResult.get("items").get("item").get("gpslong")
+        latiDistanceDiffelence = float(pointLati) - float(busLati)
+        longDistanceDiffelence = float(pointLong) - float(busLong)
+        distance = math.sqrt(math.pow(latiDistanceDiffelence,2) + math.pow(longDistanceDiffelence,2))
+        #가장 가까운 노선일 경우에만 버스정류장 정보 저장
+        if distanceStandard > distance:
+            print("수정완료")
+            distanceStandard = distance
+            # 버스정류장 정보
+            # newResultBusStop = requestResult.get("items").get("item").get("nodenm")
+            newResultBusStop = [requestResult.get("items").get("item").get("nodenm"),
+                                requestResult.get("items").get("item").get("nodeid"),
+                                requestResult.get("items").get("item").get("citycode")]
+
     elif requestResult.get("totalCount") != 0:
         # 검색결과가 여러개이면
         successCount += 1
+        print("버스정류소 검색 body데이터 :", requestResult['items']['item'][0])
+        busLati = requestResult.get("items").get("item")[0].get("gpslati")
+        busLong = requestResult.get("items").get("item")[0].get("gpslong")
+        latiDistanceDiffelence = float(pointLati) - float(busLati)
+        longDistanceDiffelence = float(pointLong) - float(busLong)
+        distance = math.sqrt(math.pow(latiDistanceDiffelence, 2) + math.pow(longDistanceDiffelence, 2))
+        # 가장 가까운 노선일 경우에만 버스정류장 정보 저장
+        if distanceStandard > distance:
+            print("수정완료")
+            distanceStandard = distance
+            # 가장 가까운 0번 선택
+            # newResultBusStop = requestResult.get("items").get("item")[0].get("nodenm")
+            newResultBusStop = [requestResult.get("items").get("item")[0].get("nodenm"),
+                                requestResult.get("items").get("item")[0].get("nodeid"),
+                                requestResult.get("items").get("item")[0].get("citycode")]
+    else :
+        print("버스정류소 검색 body데이터 : 없음")
 
-        # 가장 가까운 0번 선택
-        # newResultBusStop = requestResult.get("items").get("item")[0].get("nodenm")
-        newResultBusStop = [requestResult.get("items").get("item")[0].get("nodenm"),
-                            requestResult.get("items").get("item")[0].get("nodeid"),
-                            requestResult.get("items").get("item")[0].get("citycode")]
 
     return [newResultBusStop, successCount]
 
@@ -95,6 +119,7 @@ def coordinateBusStopSearch(pointLati, pointLong):
     busstopBodyJson = coordinateRequest(pointLati, pointLong)
 
     resultBusStop = None
+    global distanceStandard
     # 검색결과가 없으면 범위를 500m씩 넓혀서 검색하는 알고리즘 실행 같이 보낸 링크참고
     if busstopBodyJson.get("totalCount") == 0:
         successCount = 0
@@ -120,20 +145,23 @@ def coordinateBusStopSearch(pointLati, pointLong):
                 gabList.append((nowGab, 0))
                 gabList.append((nowGab, maxGab))
 
+            busstopBodyJson = coordinateRequest(firstCoordinateLati, firstCoordinateLong)
+            resultBusStop, successCount = coordinateCheckResult(busstopBodyJson, successCount, pointLati, pointLong)
+
             for latGab, longGab in gabList:
                 nowLat, nowLong = firstCoordinateLati - latGab, firstCoordinateLong - longGab
 
                 busstopBodyJson = coordinateRequest(nowLat, nowLong)
 
-                resultBusStop, successCount = coordinateCheckResult(busstopBodyJson, successCount)
+                resultBusStop, successCount = coordinateCheckResult(busstopBodyJson, successCount, pointLati, pointLong)
                 if resultBusStop is not None and getAllPathId(*resultBusStop):
                     break
 
             numberOfImplementation += 1
     else:
-        resultBusStop = coordinateCheckResult(busstopBodyJson, 0)[0]
+        resultBusStop = coordinateCheckResult(busstopBodyJson, 0, pointLati, pointLong)[0]
 
-
+    distanceStandard = 1
     return resultBusStop  # 지금은 마지막에 검색된 곳을 리턴해줌
     # TODO pointLati와 버스정류장 거리를 피타고라스로 계산 후 가장 가까운 곳 추천
 
@@ -195,7 +223,6 @@ def getAllPathId(busStopName, busStopId, cityCode):
 
     pathJson = response.json().get("response").get("body")
 
-    print(pathJson)
 
     if pathJson['totalCount'] == 1:
         return [pathJson['items']['item']['routeid']]
@@ -240,28 +267,30 @@ def getAllViaBusStop(busRouteId, cityCode):
 def findBus(userLati, userLong, userDestination):
     # [busStopName, busStopID]
     userStart = coordinateBusStopSearch(userLati, userLong)
+    print(userStart)
 
     destinationPointLati, destinationPointLong = getDestinationLoc(userDestination)
     userEnd = coordinateBusStopSearch(destinationPointLati, destinationPointLong)
+    print(userEnd)
 
     userStartAllPathId = getAllPathId(*userStart)
     userEndAllPathId = getAllPathId(*userEnd)
 
-    crossPathIds = set()
-    for pathId in userStartAllPathId:
-        viaBusStops = getAllViaBusStop(pathId, userStart[-1])
-
-        for busStop in viaBusStops:
-            if busStop['nodenm'].find(userEnd[0]) != -1:
-                crossPathIds.add(pathId)
-    for pathId in userEndAllPathId:
-        viaBusStops = getAllViaBusStop(pathId, userEnd[-1])
-
-        for busStop in viaBusStops:
-            if busStop['nodenm'].find(userStart[0]) != -1:
-                crossPathIds.add(pathId)
-
-    print(crossPathIds)
+    # crossPathIds = set()
+    # for pathId in userStartAllPathId:
+    #     viaBusStops = getAllViaBusStop(pathId, userStart[-1])
+    #
+    #     for busStop in viaBusStops:
+    #         if busStop['nodenm'].find(userEnd[0]) != -1:
+    #             crossPathIds.add(pathId)
+    # for pathId in userEndAllPathId:
+    #     viaBusStops = getAllViaBusStop(pathId, userEnd[-1])
+    #
+    #     for busStop in viaBusStops:
+    #         if busStop['nodenm'].find(userStart[0]) != -1:
+    #             crossPathIds.add(pathId)
+    #
+    # print(crossPathIds)
 
     # TODO 탐색한 모든 역에 대해 버스 최단거리 알고리즘 등 적용하면 될듯
     return None
@@ -269,6 +298,7 @@ def findBus(userLati, userLong, userDestination):
 
 if __name__ == "__main__":
     # test cod
+    findBus(37.41909998804243, 126.93540006310809, "경기대 수원캠")
     pass
 
     # === supabase test start ===
@@ -290,23 +320,23 @@ if __name__ == "__main__":
     # print("user loc :", userLati, userLong)
     userLati, userLong = 37.34849196408942, 126.98445190777875
     # busStopData = coordinateBusStopSearch(userLati, userLong)
-    busStopData = ['의왕톨게이트', 'GGB226000038', 31170]
-    print("bus_stop_data :", busStopData)
-
-    userStartAllPathId = getAllPathId(*busStopData)
-
-    print("bus_route_ids :", userStartAllPathId)
-
-    crossPathIds = []
-    destinationName = "장안"
-    for pathId in userStartAllPathId:
-        viaBusStops = getAllViaBusStop(pathId, busStopData[-1])
-
-        for busStop in viaBusStops:
-            if busStop['nodenm'].find(destinationName) != -1:
-                crossPathIds.append(pathId)
-
-    print(crossPathIds)
+    # busStopData = ['의왕톨게이트', 'GGB226000038', 31170]
+    # print("bus_stop_data :", busStopData)
+    #
+    # userStartAllPathId = getAllPathId(*busStopData)
+    #
+    # print("bus_route_ids :", userStartAllPathId)
+    #
+    # crossPathIds = []
+    # destinationName = "장안"
+    # for pathId in userStartAllPathId:
+    #     viaBusStops = getAllViaBusStop(pathId, busStopData[-1])
+    #
+    #     for busStop in viaBusStops:
+    #         if busStop['nodenm'].find(destinationName) != -1:
+    #             crossPathIds.append(pathId)
+    #
+    # print(crossPathIds)
 
 
     # 사용자위치는 임의설정(반경 500m내 버스정류장 없는 곳으로 하였음) 프론트에서 나중에 받을 예정
